@@ -42,12 +42,11 @@ def gen_rubbish_set():
     以停用词作为词典, 对idf类中没有的词做fast_search
     如果找到 则作为垃圾词,否则调高idf值
 
-    todo:
-        如果找到如: t.cn/url.cn/dwz.cn类的短网址domain
-        首先使用正则替换掉"http://t.cn/XXXXXX"
-        防止XXXXX切出词, 被当做高idf值的词, 占用词典空间
-        因为微博数据很多，不加此过滤会导致词典大小暴增
-        \b(http:\/\/)?[\w\d]+\.[\w\d\.]+\/[\w\d_!@#$%^&\*-_=\+]+
+    如果找到如: t.cn/url.cn/dwz.cn类的短网址domain
+    首先使用正则替换掉"http://t.cn/XXXXXX"
+    防止XXXXX切出词, 被当做高idf值的词, 占用词典空间
+    因为微博数据很多，不加此过滤会导致词典大小暴增
+    \b(http:\/\/)?[\w\d]+\.[\w\d\.]+\/[\w\d_!@#$%^&\*-_=\+]+
 '''
 
 class top_n:
