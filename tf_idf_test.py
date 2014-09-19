@@ -7,7 +7,6 @@ import pickle
 from bitarray import bitarray
 import re
 import os
-
 import jieba
 import math
 import ujson
