@@ -179,6 +179,57 @@ class idf:
         return dics
 
 class tf_idf:
+    def __init__(self, idf_path, stop_words_path = ""):
+        self.idf_dic = self.gen_idf_dic(idf_path)
+        self.rubbish_set = self.gen_rubbish_set(stop_words_path)
+    
+    def gen_idf_dic(self, idf_path):
+        ret_dic = {}
+        with open(idf_path) as fd:
+            for l in fd:
+                idx = l.find("\t")
+                word = l[:idx]
+                try:
+                    l_idf = float(l[idx + 1:].strip())
+                except:
+                    continue
+                ret_dic[word] = l_idf
+        return ret_dic
+    
+    def gen_rubbish_set(self, stop_words_path):
+        ret_set = set()
+        if not stop_words_path:
+            return ret_set
+        with open(stop_words_path) as fd:
+            for l in fd:
+                ret_set.add(l.strip())
+        return ret_set
+    
+    def get_top_n_tf_idf(self, doc):
+        word_list = list(jieba.cut(doc))
+        top_n_list = self.get_top_n_word_list(word_list)
+        return [i[1] for i in top_n_list]
+    
+    def get_top_n_word_list(self, word_list):
+        '''
+        传入分好的文章词列表
+        '''
+        l_word_dic = {}
+        for w in word_list:
+            word = w.encode("utf-8")
+            if word in self.rubbish_set:
+                continue
+            if not l_word_dic.has_key(word):
+                l_word_dic[word] = 0
+            l_word_dic[word] += 1
+        ret_list = []
+        for word in l_word_dic:
+            tf_idf = l_word_dic[word] * self.idf_dic.get(word, 0)
+            ret_list.append((tf_idf, word))
+        l = heapq.nlargest(5, ret_list)
+        return l
+
+class tf_idf_old:
     def __init__(self, dics = None):
         '''
         fname_dic = {fid:set([word list])}
@@ -633,7 +684,7 @@ if 0:
 
     hd.loads(s)
     
-    print hd.get_idf("的")
+    print len(hd.word_dic)
 
 if 0:
     '''
@@ -668,17 +719,79 @@ if 0:
     with open("hot_word_dumps.txt", "w") as fd:
         fd.write(s)
 
-if 1:
+if 0:
     with open("hot_word_dumps.txt", "r") as fd:
         s = fd.read()
     hd = hot_word("/tmp/testdb")
 
     hd.loads(s)
+
+    s = "我是蓝翔技工拖拉机学院手扶拖拉机专业的。不用多久，我就会升职加薪，当上总经理，出任CEO，走上人生巅峰。"
+    #蓝翔 8.65114949375
+    #手扶拖拉机 8.29447454982
+    #加薪 7.26485513263
+    #技工 6.9081801887
+    #升职 6.66523401008
+
+    line_list = []
+    res_dic = {}
+    with open("/home/kelly/test/sim_test") as fd:
+        for l in fd:
+            line_list.append(l.strip())
+            if len(line_list) >= 3:
+                line1 = line_list[0].strip()
+                line2 = line_list[1].strip()
+                
+                l1 = hd.get_file_word_list_by_num(line1, 5)
+                l2 = hd.get_file_word_list_by_num(line2, 5)
+                
+                l1_set = set(l1)
+                l2_set = set(l2)
+                
+                inter1 = (l1_set | l2_set) - l1_set
+                inter2 = (l1_set | l2_set) - l2_set
+                
+                if len(inter1) not in res_dic:
+                    res_dic[len(inter1)] = []
+                res_dic[len(inter1)].append((line1, line2, len(inter1), len(inter2), l1, l2))
+                #print res_dic[len(inter1)][len(res_dic[len(inter1)]) - 1][4]
+                #print res_dic[len(inter1)][len(res_dic[len(inter1)]) - 1][5]
+                #if len(inter1) > 1 and len(inter2) > 1:
+                #    print line1, len(inter1)
+                #    print line2, len(inter2)
+                #    for i in l1:
+                #        print i[1],
+                #    print ""
+                #    for i in l2:
+                #        print i[1],
+                #    print ""
+                line_list = []
+    for i in res_dic[2]:
+        print i[0], i[1], i[2], i[3]
+        for l in i[4]:
+            print l[1],
+        print ""
+        for l in i[5]:
+            print l[1],
+        print ""
+        print "-" * 80
+    for k in res_dic:
+        print k, len(res_dic[k])
+    exit()
     
-    l = hd.get_top_n_word_list(100000)
+    l = hd.get_file_word_list_by_num(s, 5)
 
     for i in l:
-        print i[1], i[0], i
+        print i[1], i[0]
+
+    s = "我要去蓝翔，学手扶拖拉机，能够升职加薪，做上技工."
+    
+    l = hd.get_file_word_list_by_num(s, 5)
+
+    print "-" * 80
+    for i in l:
+        print i[1], i[0]
+    #print "/".join(l)
 
 if 0:
     with open("hot_word_dumps.txt", "r") as fd:
@@ -863,3 +976,10 @@ if 0:
     print re.sub(url_re, "", s)
     
     print url_re.sub("", s)
+
+if 0:
+    l = [(1, 'a'), (2, 'b'), (3, 'c')]
+
+    t = [j[1] for j in l]
+
+    print t
