@@ -766,7 +766,7 @@ if 0:
                 #        print i[1],
                 #    print ""
                 line_list = []
-    for i in res_dic[2]:
+    for i in res_dic[1]:
         print i[0], i[1], i[2], i[3]
         for l in i[4]:
             print l[1],
