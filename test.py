@@ -6,6 +6,7 @@ import datetime
 import random
 import pickle
 import os
+import time
 import jieba
 import ujson
 import heapq
@@ -67,7 +68,8 @@ class pub_repeat_filter():
         return self.not_repeat
 
 class main_repeat_filter():
-    def __init__(self, idf_path, stop_words_path = ""):
+    def __init__(self, idf_path, stop_words_path = "", uid_overtime_path = ""):
+        self.uid_overtime_dic = self.gen_uid_overtime_dic(uid_overtime_path)
         self.tf_idf_hd = tf_idf(idf_path, stop_words_path)
         self.repeat = 0
         self.not_repeat = 1
@@ -75,14 +77,32 @@ class main_repeat_filter():
         self.word_key_pre = "main_word:"
         self.title_id_pre = "main_title_id:"
         self.uid_pre = "main_tid_uid:"
-        self.time_stamp = "main_time_stamp:"
+        self.time_stamp_pre = "main_time_stamp:"
         self.time_limit = 259200
+        self.uid_overtime_default = self.time_limit 
         self.main_title_id_key = "incr:main_title_id"
      
         self.r_hd.flushdb()
     
-    def get_max_time_limit(id_set):
-        return 259200
+    def gen_uid_overtime_dic(self, uid_overtime_path):
+        ret_dic = {}
+        if not uid_overtime_path:
+            return ret_dic
+        with open(uid_overtime_path) as fd:
+            for l in fd:
+                idx = l.find("\t")
+                uid = int(l[:idx])
+                overtime = int(l[idx + 1:].strip())
+                ret_dic[uid] = overtime
+        return ret_dic
+
+    def get_max_time_limit(self, id_set):
+        max_time = 0
+        for uid in id_set:
+            tmp = self.uid_overtime_dic.get(uid, 0)
+            if tmp > max_time:
+                max_time = tmp
+        return max_time
 
     def get_main_title_id(self):
         main_title_id = self.r_hd.incr(self.main_title_id_key)
@@ -96,11 +116,12 @@ class main_repeat_filter():
         '''
         if not id_set:
             return 
-        max_ttl = self.get_max_time_limit()
+        max_ttl = self.get_max_time_limit(id_set)
         tid = self.get_main_title_id()
         tid_key = self.title_id_pre + str(tid)
         uid_tid_key = self.uid_pre + str(tid)
         p = self.r_hd.pipeline()
+        print "word_list", word_list
         #word:
         for word in word_list:
             p.sadd(word, tid)
@@ -120,9 +141,27 @@ class main_repeat_filter():
         ttl = self.r_hd.ttl(uid_tid_key)
         ttl = ttl if ttl > max_ttl else max_ttl
         self.r_hd.expire(uid_tid_key, ttl)
-        self.r_hd.set(self.time_stamp + str(tid), int(time.time()))
-        self.r_hd.expire(self.time_stamp + str(tid), max_ttl)
+        self.r_hd.set(self.time_stamp_pre + str(tid), int(time.time()))
+        self.r_hd.expire(self.time_stamp_pre + str(tid), max_ttl)
     
+    def check_for_uid_overtime(self, tid_set, uid_set):
+        ret_uid_set = set()
+        overtime_uid_set = set()
+        cur_time = int(time.time())
+        for tid in tid_set:
+            time_stamp_key = self.time_stamp_pre + str(tid)
+            time_stamp = int(self.r_hd.get(time_stamp_key))
+
+            interval = cur_time - time_stamp
+            for uid in uid_set:
+                overtime = self.uid_overtime_dic.get(uid, 0)
+                print overtime, interval
+                if overtime > interval:
+                    ret_uid_set.add(uid)
+                else:
+                    overtime_uid_set.add(uid)
+        return ret_uid_set, overtime_uid_set
+
     def filter(self, s, id_set):
         """
         返回需要预警的id_set
@@ -132,6 +171,7 @@ class main_repeat_filter():
         print "/".join(word_list)
         
         repeat_tid_set = set()
+        ret_set = id_set
         for i in range(len(word_list)):
             key_word_list = [self.word_key_pre + word for word in word_list]
             del key_word_list[i]
@@ -139,11 +179,23 @@ class main_repeat_filter():
             tid_set = set([int(i) for i in tid_set_s])
             #fid_set为重复的id集合, 加到总重复id集合里
             repeat_tid_set |= tid_set
-        l_id_set_s = self.r_hd.sunion([self.uid_pre + str(tid) for tid in repeat_tid_set])
-        l_id_set = set([int(i) for i in l_id_set_s])
-        left_set = id_set - l_id_set 
-        self.insert_s_to_redis(s, key_word_list, left_set)
-        return left_set
+
+        key_word_list = [self.word_key_pre + word for word in word_list]
+        if repeat_tid_set:
+            tid_uid_key_list = [self.uid_pre + str(tid) for tid in repeat_tid_set]
+            l_id_set_s = self.r_hd.sunion(tid_uid_key_list)
+            l_id_set = set([int(i) for i in l_id_set_s])
+            left_set = id_set - l_id_set 
+            print "repeat tid set:", repeat_tid_set
+            ret_set, to_be_del_uid_set = self.check_for_uid_overtime(repeat_tid_set, left_set)
+            if to_be_del_uid_set:
+                for k in tid_uid_key_list:
+                    self.r_hd.srem(k, *to_be_del_uid_set)
+            self.insert_s_to_redis(s, key_word_list, ret_set)
+        else:
+            #如果一个都没有对上　则直接新增
+            self.insert_s_to_redis(s, key_word_list, id_set)
+        return ret_set
 
 def test_fun():
     r_hd = redis.Redis()
@@ -152,16 +204,45 @@ def test_fun():
     #l = ['main_word:a', 'main_word:b', 'main_word:c']
     l = ['main_word:a']
 
-    ret = r_hd.sinter(l)
+    ret = r_hd.sunion(l)
     
     print ret
 
 if 0:
-    main_flter = main_repeat_filter("idf.txt", "stopwords.txt")
-    main_flter.insert_s_to_redis('abc', ['main_word:a', 'main_word:b', 'main_word:c'], set([10, 20, 30]))
+    test_fun()
 
 if 1:
-    test_fun()
+    from coverage import coverage
+    cov = coverage()     #生成coverage对象
+    cov.start()         #开始分析
+
+    flter = main_repeat_filter("idf.txt", "stopwords.txt", "uid_overtime.txt")
+    s = "a, b, c, d, e"
+    id_set = set([1, 2, 3])
+
+    ret = flter.filter(s, id_set)
+
+    print ret
+    raw_input(">>")
+
+    s = "a, b, c, d, f"
+    id_set = set([2, 3, 4, 5])
+
+    ret = flter.filter(s, id_set)
+
+    print ret
+    cov.stop()            #分析结束
+    cov.save()            #将覆盖率结果保存到数据文件
+
+if 0:
+    tf_idf_hd = tf_idf("idf.txt", "stopwords.txt")
+    
+    s = "a, b, c, d, e, f, 1, 2, 3"
+    print tf_idf_hd.get_top_n_tf_idf(s)
+
+if 0:
+    main_flter = main_repeat_filter("idf.txt", "stopwords.txt")
+    main_flter.insert_s_to_redis('abc', ['main_word:a', 'main_word:b', 'main_word:c'], set([10, 20, 30]))
 
 if 0:
     pub_flter = pub_repeat_filter("idf.txt", "stopwords.txt")
