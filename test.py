@@ -12,6 +12,7 @@ import ujson
 import heapq
 import copy
 import fast_search
+from similarity import similarity
 
 from tf_idf_test import tf_idf, idf
 
@@ -73,6 +74,8 @@ class main_repeat_filter():
         self.tf_idf_hd = tf_idf(idf_path, stop_words_path)
         self.repeat = 0
         self.not_repeat = 1
+        #如果title中topN小于此值则将结果判断相似度
+        self.sim_judge_limit = 3
         self.r_hd = redis.Redis()
         self.word_key_pre = "main_word:"
         self.title_id_pre = "main_title_id:"
@@ -112,7 +115,7 @@ class main_repeat_filter():
         '''
         s         : 不带前缀的title完整字符串
         word_list : title中提取的高权重词, 带前缀
-        id_set    : 需要预警的id
+        id_set    : 需要预警的uid
         '''
         if not id_set:
             return 
@@ -144,8 +147,39 @@ class main_repeat_filter():
         self.r_hd.set(self.time_stamp_pre + str(tid), int(time.time()))
         self.r_hd.expire(self.time_stamp_pre + str(tid), max_ttl)
     
+    def update_uid_to_redis(self, repeat_tid_list, word_list, id_set):
+        '''
+        repeat_tid : 重复的所有title id
+        word_list  : title中提取的高权重词, 带前缀
+        id_set     : 需要预警的uid
+        '''
+        if not id_set:
+            return 
+        max_ttl = self.get_max_time_limit(id_set)
+        for tid in repeat_tid_list:
+            tid_key = self.title_id_pre + str(tid)
+            uid_tid_key = self.uid_pre + str(tid)
+            p = self.r_hd.pipeline()
+            #word:
+            #仅更新ttl
+            for word in word_list:
+                p.ttl(word)
+            ret_list = p.execute()
+            p = self.r_hd.pipeline()
+            #word ttl
+            for i in range(len(word_list)):
+                ttl = ret_list[i] if ret_list[i] > max_ttl else max_ttl
+                p.expire(word_list[i], ttl)
+            #tid:
+            p.expire(tid_key, max_ttl)
+            #uid_tid:
+            p.sadd(uid_tid_key, *id_set)
+            p.execute()
+            ttl = self.r_hd.ttl(uid_tid_key)
+            ttl = ttl if ttl > max_ttl else max_ttl
+            self.r_hd.expire(uid_tid_key, ttl)
+    
     def check_for_uid_overtime(self, tid_set, uid_set):
-        ret_uid_set = set()
         overtime_uid_set = set()
         cur_time = int(time.time())
         for tid in tid_set:
@@ -156,25 +190,25 @@ class main_repeat_filter():
             for uid in uid_set:
                 overtime = self.uid_overtime_dic.get(uid, 0)
                 print overtime, interval
-                if overtime > interval:
-                    ret_uid_set.add(uid)
-                else:
+                if overtime < interval:
                     overtime_uid_set.add(uid)
-        return ret_uid_set, overtime_uid_set
+        return overtime_uid_set
 
     def filter(self, s, id_set):
         """
         返回需要预警的id_set
         """
         word_list = self.tf_idf_hd.get_top_n_tf_idf(s)
+        word_list_len = len(word_list)
         
         print "/".join(word_list)
         
         repeat_tid_set = set()
         ret_set = id_set
-        for i in range(len(word_list)):
+        for i in range(word_list_len):
             key_word_list = [self.word_key_pre + word for word in word_list]
-            del key_word_list[i]
+            if word_list_len > 1:
+                del key_word_list[i]
             tid_set_s = self.r_hd.sinter(key_word_list)
             tid_set = set([int(i) for i in tid_set_s])
             #fid_set为重复的id集合, 加到总重复id集合里
@@ -182,16 +216,34 @@ class main_repeat_filter():
 
         key_word_list = [self.word_key_pre + word for word in word_list]
         if repeat_tid_set:
-            tid_uid_key_list = [self.uid_pre + str(tid) for tid in repeat_tid_set]
-            l_id_set_s = self.r_hd.sunion(tid_uid_key_list)
-            l_id_set = set([int(i) for i in l_id_set_s])
-            left_set = id_set - l_id_set 
-            print "repeat tid set:", repeat_tid_set
-            ret_set, to_be_del_uid_set = self.check_for_uid_overtime(repeat_tid_set, left_set)
-            if to_be_del_uid_set:
-                for k in tid_uid_key_list:
-                    self.r_hd.srem(k, *to_be_del_uid_set)
-            self.insert_s_to_redis(s, key_word_list, ret_set)
+            repeat_tid_list = list(repeat_tid_set)
+            if word_list_len < self.sim_judge_limit:
+                title_key_list = [self.title_id_pre + str(i) for i in repeat_tid_list]
+                #取出所有title判断相似度
+                title_list = self.r_hd.mget(title_key_list)
+                idx = -1
+                for title in title_list:
+                    idx += 1
+                    if similarity(s, title) > 0.5:
+                        break
+                if idx >= 0:
+                    l_id_set_s = self.r_hd.smembers(self.uid_pre + str(repeat_tid_list[idx]))
+                    l_id_set = set([int(i) for i in l_id_set_s])
+                    overtime_uid_set = self.check_for_uid_overtime(repeat_tid_set, id_set)
+                    ret_set = (id_set - l_id_set) | overtime_uid_set
+                    self.update_uid_to_redis(repeat_tid_list, key_word_list, ret_set)
+                else:
+                    #如果没有相似的title, 则insert
+                    self.insert_s_to_redis(s, key_word_list, ret_set)
+            else:
+                tid_uid_key_list = [self.uid_pre + str(tid) for tid in repeat_tid_set]
+                l_id_set_s = self.r_hd.sunion(tid_uid_key_list)
+                l_id_set = set([int(i) for i in l_id_set_s])
+                overtime_uid_set = self.check_for_uid_overtime(repeat_tid_set, id_set)
+                print "overtime uid set:", overtime_uid_set
+                print "repeat tid set:", repeat_tid_set
+                ret_set = (id_set - l_id_set) | overtime_uid_set
+                self.update_uid_to_redis(repeat_tid_list, key_word_list, ret_set)
         else:
             #如果一个都没有对上　则直接新增
             self.insert_s_to_redis(s, key_word_list, id_set)
@@ -217,19 +269,36 @@ if 1:
     cov.start()         #开始分析
 
     flter = main_repeat_filter("idf.txt", "stopwords.txt", "uid_overtime.txt")
+    #s = "a, b, c, d, e"
+    s = "x"
+    id_set = set([1, 2, 3])
+
+    ret = flter.filter(s, id_set)
+
+    print ret
+    time.sleep(2)
+    #raw_input(">>")
+
+    #s = "a, b, c, d, f"
+    s = "x"
+    id_set = set([2, 3, 4, 5])
+
+    ret = flter.filter(s, id_set)
+
+    #-------------------------------------------------------
     s = "a, b, c, d, e"
     id_set = set([1, 2, 3])
 
     ret = flter.filter(s, id_set)
 
     print ret
-    raw_input(">>")
+    time.sleep(2)
+    #raw_input(">>")
 
     s = "a, b, c, d, f"
     id_set = set([2, 3, 4, 5])
 
     ret = flter.filter(s, id_set)
-
     print ret
     cov.stop()            #分析结束
     cov.save()            #将覆盖率结果保存到数据文件
