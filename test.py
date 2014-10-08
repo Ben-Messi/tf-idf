@@ -17,11 +17,12 @@ from similarity import similarity
 from tf_idf_test import tf_idf, idf
 
 class pub_repeat_filter():
-    def __init__(self, idf_path, stop_words_path = ""):
+    def __init__(self, idf_path, stop_words_path = "", r_hd = 0):
         self.tf_idf_hd = tf_idf(idf_path, stop_words_path)
         self.repeat = 0
         self.not_repeat = 1
-        self.r_hd = redis.Redis()
+        if not r_hd:
+            self.r_hd = redis.Redis()
         self.word_key_pre = "pub_word:"
         self.title_id_pre = "pub_title_id:"
         self.time_limit = 259200

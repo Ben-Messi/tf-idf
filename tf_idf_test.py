@@ -196,6 +196,9 @@ class tf_idf:
                 ret_dic[word] = l_idf
         return ret_dic
     
+    def set_rubbish_set(self, rubbish_set):
+        self.rubbish_set = rubbish_set
+
     def gen_rubbish_set(self, stop_words_path):
         ret_set = set()
         if not stop_words_path:
@@ -557,7 +560,7 @@ class hot_word:
             yield self.get_file_by_fid(fid)
 
 if 0:
-    hd = tf_idf()
+    hd = tf_idf("idf.txt", "stopwords.txt")
     rubbish_set = gen_rubbish_set()
     hd.set_rubbish_set(rubbish_set)
     #hd.add_doc(0, "的的的")
