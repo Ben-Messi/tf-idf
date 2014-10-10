@@ -1,4 +1,4 @@
-#!/usr/bin/python
+#!/usr/bin/env python
 # -*- coding: UTF-8 -*-
 
 import datetime
@@ -73,20 +73,20 @@ class top_n:
                 heapq.heappop(self.hp)
 
 class idf:
-    def __init__(self, dics = None):
-        self.word_dic = {}
+    def __init__(self, dics = {}):
+        self.word_dic = dics
         self.fcounter = 0
         self.default_idf = 10
         self.log_base = math.e
         self.rubbish_set, self.rubbish_hd = self.get_rubbish_set()
         jieba.initialize()
 
-    def get_rubbish_set(self):
+    def get_rubbish_set(self, stopword_path = "stopwords.txt"):
         rubbish_set = set()
         hd = 0
         try:
-            hd = fast_search.load("stopwords.txt")
-            with open("stopwords.txt", "r") as fd:
+            hd = fast_search.load(stopword_path)
+            with open(stopword_path, "r") as fd:
                 for l in fd:
                     rubbish_set.add(l.strip())
         except:
@@ -421,10 +421,7 @@ class hot_word:
         self.fid = 0
         #self.get_file_word_flag = "percent"
         self.get_file_word_flag = "num"
-        self.get_word_list_num = 1
-        self.get_word_list_percent = 1
-        #等于当前模式的数字, 更新配置的时候同步更新
-        self.get_word_list_n = self.get_word_list_percent
+        self.word_list_n = 5
         self.get_file_word_cbk = {}
         self.get_file_word_cbk["num"] = self.get_file_word_list_by_num
         self.get_file_word_cbk["percent"] = self.get_file_word_list_by_persent
@@ -437,7 +434,7 @@ class hot_word:
         'word_top_num':[1, int_max) 如果使用方式 'num' n的值
         'word_top_persent':[1, 100] 如果使用方式 'percent' n的值
         '''
-        self.get_file_word_flag = option_dic.get("get_word_flag", "percent")
+        self.get_file_word_flag = option_dic.get("get_word_flag", "num")
         self.word_list_num = option_dic.get("word_top_num", 5)
         self.word_list_persent = option_dic.get("word_top_persent", 10)
         self.batch_limit = option_dic.get("batch_limit", 100000)
@@ -524,7 +521,7 @@ class hot_word:
         if self.batch_counter > self.batch_limit:
             self.write_and_clean_batch()
         s = self.s_filter(s)
-        word_list = self.get_file_word_cbk[self.get_file_word_flag](s, self.get_word_list_n)
+        word_list = self.get_file_word_cbk[self.get_file_word_flag](s, self.word_list_n)
         for w in word_list:
             word = w[1]
             if not self.hot_word_dic.has_key(word):
@@ -555,7 +552,7 @@ class hot_word:
         return s
     
     def get_file_list_by_word(self, word):
-        fid_list = self.word_dic.get(word, [])
+        fid_list = self.hot_word_dic.get(word, [])
         for fid in fid_list:
             yield self.get_file_by_fid(fid)
 
@@ -663,17 +660,20 @@ if 0:
     for tf_idf in tf_idf_list:
         print tf_idf[1], tf_idf[0]
 
-if 0:
+if 1:
+    #idf生成
     hd = idf()
     
-    root_path = "/home/kelly/combin_article/result/"
+    root_path = "/home/kelly/idf_article/"
 
+    counter = 0
     for fname in os.listdir(root_path):
+        print "counter:", counter
+        counter += 1
         fpath = os.path.join(root_path, fname)
         with open(fpath, "r") as fd:
             s = fd.read()
         hd.add_doc(s)
-    print hd.get_idf("的")
     
     s = hd.dumps()
     with open("idf_dumps.txt", "w") as fd:
@@ -694,6 +694,12 @@ if 0:
     hot_word整体测试
     '''
     hd = hot_word("/tmp/testdb")
+
+    option_dic = {}
+    option_dic["get_word_flag"] = "num"
+    option_dic["word_top_num"] = 5
+
+    hd.set_options(option_dic)
     
     root_path = "/home/kelly/negative_article_old/result"
     #root_path = "/home/kelly/negative_test_article/"
@@ -715,12 +721,24 @@ if 0:
 
     print end - begin
 
-    print hd.get_top_n_word_list(1)
+    print hd.get_top_n_word_list(5)
      
     s = hd.dumps()
         
-    with open("hot_word_dumps.txt", "w") as fd:
+    with open("hot_word_dumps_5_word.txt", "w") as fd:
         fd.write(s)
+
+if 0:
+    with open("hot_word_dumps_5_word.txt", "r") as fd:
+        s = fd.read()
+    hd = hot_word("/tmp/testdb")
+
+    hd.loads(s)
+    
+    l = hd.get_top_n_word_list(5)
+    
+    for i in l:
+        print i[0], i[1]
 
 if 0:
     with open("hot_word_dumps.txt", "r") as fd:
