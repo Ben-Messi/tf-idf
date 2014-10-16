@@ -261,10 +261,61 @@ def test_fun():
     
     print ret
 
+if 1:
+    idf_jieba_path = "/home/kelly/code/warning/key/idf.txt"
+    idf_new_path = "/home/kelly/code/git/tf-idf/idf.txt"
+    idf_full_path = "/home/kelly/code/codebackup/idf_full.txt"
+
+    new_idf = {}
+    with open(idf_new_path, "r") as fd:
+        for l in fd:
+            idx = l.find("\t")
+            w = l[:idx]
+            idf = float(l[idx + 1:])
+            new_idf[w] = idf
+    jieba_idf = {}
+    with open(idf_jieba_path, "r") as fd:
+        for l in fd:
+            idx = l.find("\t")
+            w = l[:idx]
+            idf = float(l[idx + 1:])
+            jieba_idf[w] = idf
+    full_idf = new_idf
+    full_idf.update(jieba_idf)
+
+    full_idf_list = []
+    for w in full_idf:
+        full_idf_list.append((full_idf[w], w))
+
+    full_idf_list = heapq.nlargest(len(full_idf_list), full_idf_list)
+
+    with open(idf_full_path, "w") as fd:
+        for w in full_idf_list:
+            fd.write(w[1] + "\t" + str(w[0]) + "\n")
+    exit()
+
+    diff_counter = 0
+    same_counter = 0
+    for w in jieba_idf:
+        if w not in new_idf:
+            diff_counter += 1
+        else:
+            same_counter += 1
+    print same_counter, diff_counter, len(jieba_idf), len(new_idf)
+
+    diff_counter = 0
+    same_counter = 0
+    for w in new_idf:
+        if w not in jieba_idf:
+            diff_counter += 1
+        else:
+            same_counter += 1
+    print same_counter, diff_counter, len(jieba_idf), len(new_idf)
+
 if 0:
     test_fun()
 
-if 1:
+if 0:
     from coverage import coverage
     cov = coverage()     #生成coverage对象
     cov.start()         #开始分析
