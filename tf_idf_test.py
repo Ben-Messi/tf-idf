@@ -147,7 +147,7 @@ class idf:
         使用set_default_idf(idf) 设置默认idf值
         """
         if word in self.rubbish_set:
-            return 0
+            return math.log(float(self.fcounter)/self.word_dic[word], self.log_base)
         elif word not in self.word_dic:
             return self.default_idf
         else:
@@ -162,6 +162,19 @@ class idf:
         s = cPickle.dumps(dics)
         return s
     
+    def save_idf_by_fpath(self, fpath):
+        with open(fpath, "w") as fd:
+            self.save_idf_by_fd(fd)
+
+    def save_idf_by_fd(self, fd):
+        idf_list = []
+        for w in self.word_dic:
+            lidf = self.get_idf(w)
+            idf_list.append((lidf, w))
+        idf_list = heapq.nlargest(len(idf_list), idf_list)
+        for i in idf_list:
+            fd.write(i[1] + "\t" + str(i[0]) + "\n")
+
     def set_vars_by_dics(self, dics):
         self.word_dic    = dics["word_dic"]
         self.fcounter    = dics["fcounter"]
@@ -660,7 +673,7 @@ if 0:
     for tf_idf in tf_idf_list:
         print tf_idf[1], tf_idf[0]
 
-if 1:
+if 0:
     #idf生成
     hd = idf()
     
@@ -687,7 +700,16 @@ if 0:
 
     hd.loads(s)
     
-    print len(hd.word_dic)
+    print hd.word_dic["的"], "/", hd.fcounter
+    
+    #print hd.get_idf("的")
+        
+    #print len(hd.word_dic)
+    hd.save_idf_by_fpath("/home/kelly/tempfile")
+
+if 0:
+    i = math.log(float(812038)/550674, math.e)
+    print str(i)
 
 if 0:
     '''
