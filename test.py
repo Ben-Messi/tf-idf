@@ -12,9 +12,18 @@ import ujson
 import heapq
 import copy
 import fast_search
+import hot_word
 from similarity import similarity
 
 from tf_idf_test import tf_idf, idf
+
+def read_file(filename):
+    fd = file(filename, "r")
+    title = fd.readline()
+    title = title.strip()
+    content = fd.read()
+    fd.close()
+    return (title, content)
 
 class pub_repeat_filter():
     def __init__(self, idf_path, stop_words_path = "", r_hd = 0):
@@ -262,6 +271,44 @@ def test_fun():
     print ret
 
 if 1:
+    h = hot_word.hot_word()
+
+    root_dir = "/home/kelly/negative_article_old/result"
+    article = []
+    counter = 0
+    for fname in os.listdir(root_dir):
+        print counter
+        counter += 1
+        if counter > 10000:
+            break
+        title, content = read_file(os.path.join(root_dir, fname))
+        json_data = {}
+        l = list(jieba.cut(title + content))
+        for i in range(len(l)):
+            l[i] = l[i].encode("utf-8")
+        json_data["jieba_cut"] = l
+        json_data["title"] = title
+        json_data["content"] = content
+        article.append(json_data)
+
+    jieba.initialize()
+    print "append done."
+    print "article len:", len(article)
+    begin = datetime.datetime.now()
+    #counter = 0
+    for i in article:
+        #print counter
+        #counter += 1
+        h.add_doc_json(i)
+    end = datetime.datetime.now()
+
+    print end - begin
+
+    #l = h.get_top_n_word_list(3)
+
+    #print "/".join([i[1] for i in l])
+
+if 0:
     idf_jieba_path = "/home/kelly/code/warning/key/idf.txt"
     idf_new_path = "/home/kelly/code/git/tf-idf/idf.txt"
     idf_full_path = "/home/kelly/code/codebackup/idf_full.txt"
