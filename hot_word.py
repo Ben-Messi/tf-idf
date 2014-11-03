@@ -152,7 +152,7 @@ class idf:
         return dics
 
 class hot_word:
-    def __init__(self, db_name):
+    def __init__(self):
         self.idf_hd = idf()
         with open("idf_dumps.txt", "r") as fd:
             s = fd.read()
@@ -160,14 +160,7 @@ class hot_word:
         self.idf_hd.loads(s)
         self.hot_word_dic = {}
         self.short_url_hd = fast_search.load("short_url.txt")
-        self.dbhd = leveldb.LevelDB(db_name)
         self.url_re = re.compile(r'(http:\/\/)*[\w\d]+\.[\w\d\.]+\/[\w\d_!@#$%^&\*-_=\+]+')
-        #内部使用batch做缓存 add_doc时暂时不写入db文件
-        #要获取结果，或者达到阈值(batch_limit)时才写入文件
-        self.batch = leveldb.WriteBatch()
-        self.batch_counter = 0
-        self.batch_limit = 100000
-        self.fid = 0
         #self.get_file_word_flag = "percent"
         self.get_file_word_flag = "num"
         self.word_list_n = 5
@@ -186,7 +179,6 @@ class hot_word:
         self.get_file_word_flag = option_dic.get("get_word_flag", "num")
         self.word_list_num = option_dic.get("word_top_num", 5)
         self.word_list_persent = option_dic.get("word_top_persent", 10)
-        self.batch_limit = option_dic.get("batch_limit", 100000)
         if self.get_file_word_flag == "percent":
             self.word_list_n = self.word_list_persent
         elif self.get_file_word_flag == "num":
@@ -265,18 +257,13 @@ class hot_word:
         self.add_doc_s(s)
     
     def add_doc_s(self, s):
-        self.batch.Put(str(self.fid), s)
-        self.batch_counter += 1
-        if self.batch_counter > self.batch_limit:
-            self.write_and_clean_batch()
         s = self.s_filter(s)
         word_list = self.get_file_word_cbk[self.get_file_word_flag](s, self.word_list_n)
         for w in word_list:
             word = w[1]
             if not self.hot_word_dic.has_key(word):
-                self.hot_word_dic[word] = set()
-            self.hot_word_dic[word].add(self.fid)
-        self.fid += 1
+                self.hot_word_dic[word] = 0
+            self.hot_word_dic[word] += 1
 
     def get_top_n_word_list(self, n):
         hot_word_list = []
@@ -285,22 +272,3 @@ class hot_word:
             hot_word_list.append((len(self.hot_word_dic[word]), word))
         l = heapq.nlargest(n, hot_word_list)
         return l
-    
-    def write_and_clean_batch(self):
-        if self.batch_counter:
-            self.dbhd.Write(self.batch)
-            self.batch_counter = 0
-            self.batch = leveldb.WriteBatch()
-
-    def get_file_by_fid(self, fid):
-        self.write_and_clean_batch()
-        try:
-            s = self.dbhd.Get(str(fid))
-        except:
-            s = ""
-        return s
-    
-    def get_file_list_by_word(self, word):
-        fid_list = self.hot_word_dic.get(word, [])
-        for fid in fid_list:
-            yield self.get_file_by_fid(fid)
