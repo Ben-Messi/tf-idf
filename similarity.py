@@ -1,6 +1,6 @@
 #!/usr/bin/python
 # -*- coding: UTF-8 -*-
-import c_distance_compare
+import c_tf_idf_tk
 
 def similarity(base, s):
     #global sim_counter
@@ -28,7 +28,7 @@ def distance_compare(s, t):
     if n < m/2:
         return n
 
-    return c_distance_compare.distance_compare(s, t, n, m)
+    return c_tf_idf_tk.distance_compare(s, t, n, m)
 
 
 if __name__ == "__main__":

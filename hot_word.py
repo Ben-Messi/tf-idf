@@ -15,6 +15,28 @@ import heapq
 import copy
 import leveldb
 import fast_search
+import c_tf_idf_tk
+import tf_idf_config
+
+class cppjieba:
+    def __init__(self, dict_path = "jieba.dict.utf8", hmm_path = "hmm_model.utf8"):
+        self.dict_path = dict_path
+        self.hmm_path = hmm_path
+        self.inited = 0
+        self.seg_hd = 0
+
+    def initialize(self):
+        if not self.inited:
+            self.seg_hd = c_tf_idf_tk.cppjieba_init(self.dict_path, self.hmm_path)
+        self.inited = 1
+
+    def cut(self, s):
+        if not self.inited:
+            self.initialize()
+        return c_tf_idf_tk.cppjieba_cut(self.seg_hd, s)
+    
+    def __del__(self):
+        c_tf_idf_tk.cppjieba_close(self.seg_hd)
 
 '''
     独立出idf类, 如果某个词不在idf词典和停用词词典中 应给予高idf
@@ -39,7 +61,10 @@ class idf:
         self.default_idf = 10
         self.log_base = math.e
         self.rubbish_set, self.rubbish_hd = self.get_rubbish_set()
-        jieba.initialize()
+        cur_path = os.path.dirname(__file__)
+        dict_path = tf_idf_config.dict_path
+        hmm_path = tf_idf_config.hmm_path
+        self.seg_hd = cppjieba(dict_path, hmm_path)
 
     def get_rubbish_set(self, stopword_path = "stopwords.txt"):
         rubbish_set = set()
@@ -93,9 +118,8 @@ class idf:
         self.default_idf = idf
 
     def add_doc(self, s):
-        word_set = set(jieba.cut(s))
-        for w in word_set:
-            word = w.encode("utf-8")
+        word_set = set(self.seg_hd.cut(s))
+        for word in word_set:
             if not self.word_dic.has_key(word):
                 self.word_dic[word] = 0
             self.word_dic[word] += 1
@@ -154,6 +178,7 @@ class idf:
 class hot_word:
     def __init__(self):
         self.idf_hd = idf()
+        self.seg_hd = cppjieba(tf_idf_config.dict_path, tf_idf_config.hmm_path)
         with open("idf_dumps.txt", "r") as fd:
             s = fd.read()
     
@@ -204,7 +229,7 @@ class hot_word:
         '''
         获取文章tf-idf值top_n的词列表
         '''
-        word_list = list(jieba.cut(s))
+        word_list = self.seg_hd.cut(s)
 
         return self.get_file_word_list_base(word_list, n)
 
@@ -212,7 +237,7 @@ class hot_word:
         '''
         获取文章tf-idf值top n%的词列表
         '''
-        word_list = list(jieba.cut(s))
+        word_list = self.seg_hd.cut(s)
         #使用去重后的词数
         word_num = int(len(set(word_list)) * n * 0.01)
         if not word_num:
@@ -221,13 +246,18 @@ class hot_word:
 
         return self.get_file_word_list_base(word_list, word_num)
 
+    #@profile
     def get_file_word_list_base(self, word_list, n):
         '''
         传入分好的文章词列表
         '''
+        #l = word_list[:n]
+        #ret = []
+        #for i in l:
+        #    ret.append((1, i))
+        #return ret
         l_word_dic = {}
-        for w in word_list:
-            word = w.encode("utf-8")
+        for word in word_list:
             if self.idf_hd.is_rubbish(word):
                 continue
             if not l_word_dic.has_key(word):
@@ -256,11 +286,24 @@ class hot_word:
         
         self.add_doc_s(s)
     
+    #@profile
+    def add_doc_word_list(self, word_list):
+        ret_list = self.get_file_word_list_base(word_list, self.word_list_n)
+        self.add_word_to_dic(ret_list)
+
     def add_doc_s(self, s):
         s = self.s_filter(s)
         word_list = self.get_file_word_cbk[self.get_file_word_flag](s, self.word_list_n)
+        self.add_word_to_dic(word_list)
+
+    #@profile
+    def add_word_to_dic(self, word_list):
         for w in word_list:
-            word = w[1]
+            try:
+                word = w[1]
+            except:
+                print w
+                exit()
             if not self.hot_word_dic.has_key(word):
                 self.hot_word_dic[word] = 0
             self.hot_word_dic[word] += 1
@@ -269,6 +312,6 @@ class hot_word:
         hot_word_list = []
         for word in self.hot_word_dic:
             #print self.hot_word_dic[word], word
-            hot_word_list.append((len(self.hot_word_dic[word]), word))
+            hot_word_list.append((self.hot_word_dic[word], word))
         l = heapq.nlargest(n, hot_word_list)
         return l

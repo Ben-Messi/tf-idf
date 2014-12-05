@@ -270,43 +270,62 @@ def test_fun():
     
     print ret
 
+if 0:
+    seg_hd = hot_word.cppjieba()
+    seg_hd.initialize()
+    seg_hd.cut("中华人民共和国")
+
 if 1:
     h = hot_word.hot_word()
+    #p = "/home/kelly/negative_article_old/result/01_p2_983.txt"
+    #title, content = read_file(p)
+    #h.add_doc_s(title + content)
+
+    #exit()
 
     root_dir = "/home/kelly/negative_article_old/result"
     article = []
     counter = 0
     for fname in os.listdir(root_dir):
-        print counter
         counter += 1
-        if counter > 10000:
-            break
+        #if counter > 10000:
+        #    break
         title, content = read_file(os.path.join(root_dir, fname))
         json_data = {}
-        l = list(jieba.cut(title + content))
-        for i in range(len(l)):
-            l[i] = l[i].encode("utf-8")
-        json_data["jieba_cut"] = l
+        #l = list(jieba.cut(title + content))
+        #for i in range(len(l)):
+        #    l[i] = l[i].encode("utf-8")
+        #json_data["jieba_cut"] = l
         json_data["title"] = title
         json_data["content"] = content
         article.append(json_data)
 
-    jieba.initialize()
-    print "append done."
-    print "article len:", len(article)
+    #jieba.initialize()
+    #begin = datetime.datetime.now()
+    #word_list = []
+    ##counter = 0
+    #for i in [] and article:
+    #    l = list(jieba.cut(i["title"] + i["content"]))
+    #    #for j in range(len(l)):
+    #    #    l[j] = l[j].encode("utf-8")
+    #    word_list.append(l)
+    #end = datetime.datetime.now()
+    #print end - begin
+    #print "append done."
+    #print "article len:", len(article)
     begin = datetime.datetime.now()
     #counter = 0
     for i in article:
         #print counter
         #counter += 1
-        h.add_doc_json(i)
+        h.add_doc_s(i["title"] + i["content"])
     end = datetime.datetime.now()
 
     print end - begin
 
-    #l = h.get_top_n_word_list(3)
+    l = h.get_top_n_word_list(3)
 
-    #print "/".join([i[1] for i in l])
+    print "/".join([i[1] for i in l])
 
 if 0:
     idf_jieba_path = "/home/kelly/code/warning/key/idf.txt"
@@ -360,7 +379,11 @@ if 0:
     print same_counter, diff_counter, len(jieba_idf), len(new_idf)
 
 if 0:
-    test_fun()
+    idf_hd = idf()
+    with open("idf_dumps.txt") as fd:
+        s = fd.read()
+        idf_hd.loads(s)
+    idf_hd.save_idf_by_fpath("/home/kelly/backup/idf.txt")
 
 if 0:
     from coverage import coverage
