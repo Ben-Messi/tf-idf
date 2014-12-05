@@ -54,7 +54,7 @@ class cppjieba:
     \b(http:\/\/)?[\w\d]+\.[\w\d\.]+\/[\w\d_!@#$%^&\*-_=\+]+
 '''
 
-class idf:
+class train_idf:
     def __init__(self, dics = {}):
         self.word_dic = dics
         self.fcounter = 0
@@ -175,16 +175,57 @@ class idf:
         dics["rubbish_set"] = self.rubbish_set
         return dics
 
+class idf:
+    def __init__(self):
+        self.idf_dic = {}
+        self.stopword_set = set()
+        self.default_idf = tf_idf_config.default_idf
+
+    def load_idf(self, idf_path):
+        with open(idf_path) as fd:
+            for l in fd:
+                idx = l.find("\t")
+                if idx <= 0:
+                    continue
+                word = l[:idx]
+                if not word:
+                    continue
+                if l[idx + 1:]:
+                    idf_v = float(l[idx + 1:])
+                else:
+                    idf_v = 0
+                self.idf_dic[word] = idf_v
+
+    def load_stopwords(self, stopword_path):
+        with open(stopword_path) as fd:
+            for l in fd:
+                self.stopword_set.add(l.strip())
+        self.stopword_set.add(" ")
+        self.stopword_set.add("\t")
+        self.stopword_set.add("\n")
+        self.stopword_set.add("\r")
+        self.stopword_set.add("\r\n")
+
+    def load(self, idf_path, stopword_path):
+        self.load_idf(idf_path)
+        self.load_stopwords(stopword_path)
+    
+    def get_idf(self, w):
+        return self.idf_dic.get(w, self.default_idf)
+    
+    def is_rubbish(self, w):
+        return w in self.stopword_set
+
 class hot_word:
     def __init__(self):
         self.idf_hd = idf()
         self.seg_hd = cppjieba(tf_idf_config.dict_path, tf_idf_config.hmm_path)
-        with open("idf_dumps.txt", "r") as fd:
+        with open(tf_idf_config.idf_dumps_path, "r") as fd:
             s = fd.read()
     
-        self.idf_hd.loads(s)
+        self.idf_hd.load(tf_idf_config.idf_dumps_path, tf_idf_config.stopwords_path)
         self.hot_word_dic = {}
-        self.short_url_hd = fast_search.load("short_url.txt")
+        self.short_url_hd = fast_search.load(tf_idf_config.short_url_path)
         self.url_re = re.compile(r'(http:\/\/)*[\w\d]+\.[\w\d\.]+\/[\w\d_!@#$%^&\*-_=\+]+')
         #self.get_file_word_flag = "percent"
         self.get_file_word_flag = "num"
@@ -213,7 +254,6 @@ class hot_word:
 
     def dumps(self):
         dics = {}
-        dics["idf_hd"] = self.idf_hd.dumps()
         dics["hot_word_dic"] = pickle.dumps(self.hot_word_dic)
         self.write_and_clean_batch()
         s = pickle.dumps(dics)
@@ -222,7 +262,7 @@ class hot_word:
     def loads(self, s):
         dics = pickle.loads(s)
         self.idf_hd = idf()
-        self.idf_hd.loads(dics["idf_hd"])
+        self.idf_hd.load(tf_idf_config.idf_path, tf_idf_config.stopwords_path)
         self.hot_word_dic = pickle.loads(dics["hot_word_dic"])
 
     def get_file_word_list_by_num(self, s, n):
