@@ -6,3 +6,5 @@ idf_dumps_path = "/home/kelly/code/git/tf-idf/idf.txt"
 stopwords_path = "/home/kelly/code/git/tf-idfstopwords.txt"
 short_url_path = "/home/kelly/code/git/tf-idfshort_url.txt"
 default_idf = 13.6
+min_interval = 600
+max_interval = 2 * 24 * 3600

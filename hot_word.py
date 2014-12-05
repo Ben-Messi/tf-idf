@@ -355,3 +355,17 @@ class hot_word:
             hot_word_list.append((self.hot_word_dic[word], word))
         l = heapq.nlargest(n, hot_word_list)
         return l
+
+#内部使用循环数组做hot_word对象管理
+class hot_event:
+    def __init__:
+        pass
+    def __del__:
+        pass
+
+def merge_hot_word_dic(hot_word_dic):
+    pass
+
+#多个hot_word小类合成一个大类
+def merge_hot_word(hot_word_list):
+    pass
