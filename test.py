@@ -270,12 +270,82 @@ def test_fun():
     
     print ret
 
+if 1:
+    #class test
+    class test_c:
+        def __init__(self, v):
+            self.t = v
+
+        def __isub__(self, tc):
+            self.t -= tc.t
+
+    l = range(100000)
+    counter = 100
+    d = {}
+    for i in l:
+        d[i] = i
+    a = 0
+    begin = datetime.datetime.now()
+    for c in range(counter):
+        for i in l:
+            a = 0
+            a += i
+    end = datetime.datetime.now()
+
+    print end - begin
+
+    begin = datetime.datetime.now()
+    for c in range(counter):
+        for i in d:
+            a = 0
+            a += i
+    end = datetime.datetime.now()
+
+    print end - begin
+
+if 0:
+    e = hot_word.hot_event("test")
+    with open("/home/kelly/tempfile") as fd:
+        s = fd.read()
+    while 1:
+        e.add_doc_s(s)
+        
+
+if 0:
+    #循环list测试
+    l = hot_word.loop_list()
+    l2 = list(l)
+    exit()
+    i = iter(l)
+    i.next()
+    i.next()
+    print len(l)
+
+if 0:
+    #复杂度测试
+    counter = 100000
+    begin = datetime.datetime.now()
+    for i in range(counter):
+        l = [1] * 8000
+        del l[7999]
+    end = datetime.datetime.now()
+
+    print end - begin
+
+    begin = datetime.datetime.now()
+    for i in range(counter):
+        l = [1] * 8000
+        del l[0]
+    end = datetime.datetime.now()
+
+    print end - begin
+
 if 0:
     seg_hd = hot_word.cppjieba()
     seg_hd.initialize()
     seg_hd.cut("中华人民共和国")
 
-if 1:
+if 0:
     h = hot_word.hot_word()
     #p = "/home/kelly/negative_article_old/result/01_p2_983.txt"
     #title, content = read_file(p)

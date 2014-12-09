@@ -1,13 +1,16 @@
 #!/usr/bin/env python
 # -*- coding: UTF-8 -*-
 
+import time
 import datetime
 import random
 import pickle
 from bitarray import bitarray
 import re
 import os
+import threading
 import jieba
+import redis
 import math
 import ujson
 import cPickle
@@ -217,22 +220,30 @@ class idf:
         return w in self.stopword_set
 
 class hot_word:
+    idf_hd = None
+    seg_hd = None
+    short_url_hd = None
+    url_re = None
     def __init__(self):
-        self.idf_hd = idf()
-        self.seg_hd = cppjieba(tf_idf_config.dict_path, tf_idf_config.hmm_path)
-        with open(tf_idf_config.idf_dumps_path, "r") as fd:
-            s = fd.read()
+        if not hot_word.idf_hd:
+            hot_word.idf_hd = idf()
+            hot_word.idf_hd.load(tf_idf_config.idf_dumps_path, tf_idf_config.stopwords_path)
+        if not hot_word.seg_hd:
+            hot_word.seg_hd = cppjieba(tf_idf_config.dict_path, tf_idf_config.hmm_path)
     
-        self.idf_hd.load(tf_idf_config.idf_dumps_path, tf_idf_config.stopwords_path)
+        if not hot_word.short_url_hd:
+            hot_word.short_url_hd = fast_search.load(tf_idf_config.short_url_path)
+        if not hot_word.url_re:
+            hot_word.url_re = re.compile(r'(http:\/\/)*[\w\d]+\.[\w\d\.]+\/[\w\d_!@#$%^&\*-_=\+]+')
         self.hot_word_dic = {}
-        self.short_url_hd = fast_search.load(tf_idf_config.short_url_path)
-        self.url_re = re.compile(r'(http:\/\/)*[\w\d]+\.[\w\d\.]+\/[\w\d_!@#$%^&\*-_=\+]+')
-        #self.get_file_word_flag = "percent"
         self.get_file_word_flag = "num"
         self.word_list_n = 5
         self.get_file_word_cbk = {}
         self.get_file_word_cbk["num"] = self.get_file_word_list_by_num
         self.get_file_word_cbk["percent"] = self.get_file_word_list_by_persent
+
+    def clear(self):
+        self.hot_word_dic.clear()
 
     def set_options(self, option_dic):
         '''
@@ -261,15 +272,30 @@ class hot_word:
     
     def loads(self, s):
         dics = pickle.loads(s)
-        self.idf_hd = idf()
-        self.idf_hd.load(tf_idf_config.idf_path, tf_idf_config.stopwords_path)
+        hot_word.idf_hd = idf()
+        hot_word.idf_hd.load(tf_idf_config.idf_path, tf_idf_config.stopwords_path)
         self.hot_word_dic = pickle.loads(dics["hot_word_dic"])
+
+    def __isub__(self, hw_hd):
+        d = hw_hd.hot_word_dic
+        for word in d:
+            self.hot_word_dic[word] = self.hot_word_dic.get(word, 0)
+            self.hot_word_dic[word] -= d[word]
+            if not self.hot_word_dic[word]:
+                del self.hot_word_dic[word]
+        return self
+
+    def __iadd__(self, hw_hd):
+        d = hw_hd.hot_word_dic
+        for word in d:
+            self.hot_word_dic[word] = self.hot_word_dic.get(word, 0)
+            self.hot_word_dic[word] += d[word]
 
     def get_file_word_list_by_num(self, s, n):
         '''
         获取文章tf-idf值top_n的词列表
         '''
-        word_list = self.seg_hd.cut(s)
+        word_list = hot_word.seg_hd.cut(s)
 
         return self.get_file_word_list_base(word_list, n)
 
@@ -277,7 +303,7 @@ class hot_word:
         '''
         获取文章tf-idf值top n%的词列表
         '''
-        word_list = self.seg_hd.cut(s)
+        word_list = hot_word.seg_hd.cut(s)
         #使用去重后的词数
         word_num = int(len(set(word_list)) * n * 0.01)
         if not word_num:
@@ -298,22 +324,22 @@ class hot_word:
         #return ret
         l_word_dic = {}
         for word in word_list:
-            if self.idf_hd.is_rubbish(word):
+            if hot_word.idf_hd.is_rubbish(word):
                 continue
             if not l_word_dic.has_key(word):
                 l_word_dic[word] = 0
             l_word_dic[word] += 1
         ret_list = []
         for word in l_word_dic:
-            tf_idf = l_word_dic[word] * self.idf_hd.get_idf(word)
+            tf_idf = l_word_dic[word] * hot_word.idf_hd.get_idf(word)
             ret_list.append((tf_idf, word))
         l = heapq.nlargest(n, ret_list)
         return l
 
     def s_filter(self, s):
-        result = fast_search.findall(self.short_url_hd, s)
+        result = fast_search.findall(hot_word.short_url_hd, s)
         if result:
-            s = self.url_re.sub("", s)
+            s = hot_word.url_re.sub("", s)
         return s
 
     #此doc不再加到idf中, idf不再变化
@@ -331,6 +357,11 @@ class hot_word:
         ret_list = self.get_file_word_list_base(word_list, self.word_list_n)
         self.add_word_to_dic(ret_list)
 
+    def get_word_list(self, s):
+        s = self.s_filter(s)
+        word_list = self.seg_hd.cut(s)
+        return word_list
+
     def add_doc_s(self, s):
         s = self.s_filter(s)
         word_list = self.get_file_word_cbk[self.get_file_word_flag](s, self.word_list_n)
@@ -342,30 +373,170 @@ class hot_word:
             try:
                 word = w[1]
             except:
-                print w
                 exit()
             if not self.hot_word_dic.has_key(word):
                 self.hot_word_dic[word] = 0
             self.hot_word_dic[word] += 1
 
+    #不带频数的word_list
     def get_top_n_word_list(self, n):
+        l = self.get_top_n_word_list_with_freq(n)
+        return [i[1] for i in l]
+
+    #带频数的word_list
+    def get_top_n_word_list_with_freq(self, n):
         hot_word_list = []
         for word in self.hot_word_dic:
-            #print self.hot_word_dic[word], word
             hot_word_list.append((self.hot_word_dic[word], word))
         l = heapq.nlargest(n, hot_word_list)
         return l
 
+#无需外界管理数组头
+#只需append,loop_list类会管理长度及数组头
+#__init__(self, 长度, 类型)
+class loop_list:
+    def __init__(self, list_len, T):
+        self.T = T
+        self.is_full = 0
+        self.list_len = list_len
+        self.cur_idx = 0
+        self.head_idx = 0
+        self.l = []
+        for i in range(list_len):
+            self.l.append(T())
+
+    def __getitem__(self, idx):
+        if idx >= self.list_len or idx < 0:
+            raise IndexError
+        else:
+            return self.l[(self.head_idx + idx) % self.list_len]
+
+    def __setitem__(self, idx, v):
+        if idx >= self.list_len or idx < 0:
+            raise IndexError
+        else:
+            self.l[(self.head_idx + idx) % self.list_len] = v
+
+    def __len__(self):
+        return self.list_len
+
+    def move_next(self):
+        '''
+        cur_idx指向下一个
+        '''
+        tmp_idx = (self.cur_idx + 1) % self.list_len
+        if tmp_idx < self.cur_idx:
+            self.is_full = 1
+        self.cur_idx = tmp_idx
+
+        if self.is_full:
+            self.head_idx = (self.head_idx + 1) % self.list_len
+
+        if hasattr(self.l[self.cur_idx], 'clear'):
+            self.l[self.cur_idx].clear()
+        else:
+            self.l[self.cur_idx] = self.T()
+
+    def to_list(self):
+        ret_list = []
+        i = 0
+        while ((self.head_idx + i) % self.list_len) != self.cur_idx:
+            ret_list.append(self.__getitem__(i))
+            i += 1
+
+    def end(self):
+        '''
+        返回最后一个元素的索引, 外部使用
+        '''
+        if self.is_full:
+            return self.list_len - 1
+        else:
+            return self.cur_idx
+
+    def __del__(self):
+        pass
+
 #内部使用循环数组做hot_word对象管理
+#todo: 如果性能过低,尝试使用同时加到min,max里,如果min过期,则从max里减去min
 class hot_event:
-    def __init__:
-        pass
-    def __del__:
-        pass
+    def __init__(self, pre_fix):
+        self.pre_fix = pre_fix
+        self.init_time = time.time()
+        self.cur_time = self.init_time
+        self.min_interval = tf_idf_config.min_interval
+        self.max_interval = tf_idf_config.max_interval
+        self.max_counter = 0
+        #此处实例化hot_word类后类属性会初始化,loop_list创建对象则不会再费时间
+        self.max_hd = hot_word()
+        self.hd_list = loop_list(int(self.max_interval / self.min_interval), hot_word)
+        self.rhd = redis.Redis(host = tf_idf_config.redis_host, port = tf_idf_config.redis_port, db = tf_idf_config.redis_db)
 
-def merge_hot_word_dic(hot_word_dic):
-    pass
 
-#多个hot_word小类合成一个大类
-def merge_hot_word(hot_word_list):
-    pass
+        self.thread_lock = threading.Lock()
+        t = threading.Thread(target=self.refresh, args=())
+        t.setDaemon(True)
+        t.start()
+
+    def refresh(self):
+        while 1:
+            t = time.time()
+            self.thread_lock.acquire()
+            self.max_counter += 1
+            self.store_word_lists()
+            if self.hd_list.is_full:
+                self.max_hd -= self.hd_list[0]
+            self.hd_list.move_next()
+            self.cur_time = t
+            self.thread_lock.release()
+            time.sleep(tf_idf_config.min_interval)
+
+    def add_doc_s(self, s):
+        word_list = self.max_hd.get_word_list(s)
+        self.thread_lock.acquire()
+        self.hd_list[self.hd_list.end()].add_doc_word_list(word_list)
+        self.max_hd.add_doc_word_list(word_list)
+        self.thread_lock.release()
+
+    def get_top_n_word_list_with_freq(self, n):
+        '''
+        返回tuple
+        元素1为当前min_interval中热门词
+        元素2为当前max_interval中热门词
+        '''
+        min_word_list = self.hd_list[self.hd_list.end()].get_top_n_word_list_with_freq(n)
+        max_word_list = self.max_hd.get_top_n_word_list_with_freq(n)
+        return (min_word_list, max_word_list)
+
+    def get_top_n_word_list(self, n):
+        '''
+        返回tuple
+        元素1为当前min_interval中热门词
+        元素2为当前max_interval中热门词
+        '''
+        freq_word_lists = self.get_top_n_word_list_with_freq(n)
+        return ([i[1] for i in freq_word_lists[0]], [i[1] for i in freq_word_lists[1]])
+
+    def store_word_lists(self):
+        '''
+        生成min,max word_list, 并存储
+        '''
+        word_lists = self.get_top_n_word_list(tf_idf_config.word_list_len)
+        min_key = "%s:%s" % (self.pre_fix, tf_idf_config.min_interval_key)
+
+        dt = datetime.datetime.now()
+        min_json = {}
+        min_json["words"] = word_lists[0]
+        min_json['ctime'] = dt
+        min_json_str = ujson.dumps(min_json)
+        self.rhd.rpush(min_key, min_json_str)
+        if (self.max_interval / self.min_interval) <= self.max_counter:
+            self.max_counter = 0
+            max_key = "%s:%s" % (self.pre_fix, tf_idf_config.max_interval_key)
+            max_json = {}
+            max_json["words"] = word_lists[1]
+            max_json['ctime'] = dt
+            max_json_str = ujson.dumps(max_json)
+            self.rhd.rpush(max_key, max_json_str)
+
+    def __del__(self):
+        pass
