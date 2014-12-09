@@ -357,6 +357,14 @@ class hot_word:
         ret_list = self.get_file_word_list_base(word_list, self.word_list_n)
         self.add_word_to_dic(ret_list)
 
+    def add_doc_word_list_many(self, word_list, hwhd_list):
+        '''
+        hwhd_list需要包含自身
+        '''
+        ret_list = self.get_file_word_list_base(word_list, self.word_list_n)
+        for hwhd in hw_list:
+            hwhd.add_word_to_dic(ret_list)
+
     def get_word_list(self, s):
         s = self.s_filter(s)
         word_list = self.seg_hd.cut(s)
@@ -496,6 +504,22 @@ class hot_event:
         self.hd_list[self.hd_list.end()].add_doc_word_list(word_list)
         self.max_hd.add_doc_word_list(word_list)
         self.thread_lock.release()
+
+    def add_doc_s_many(self, s, hehd_list):
+        '''
+        hehd_list需要包含自身
+        '''
+        word_list = self.max_hd.get_word_list(s)
+        #全部加锁
+        for hehd in hehd_list:
+            hehd.thread_lock.acquire()
+        hwhd_list = []
+        for hehd in hehd_list:
+            hwhd_list.append(hehd.hd_list[hehd.hd_list.end()])
+            hwhd_list.append(hehd.max_hd)
+        self.max_hd.add_doc_word_list_many(word_list, hwhd_list)
+        for hehd in hehd_list:
+            hehd.thread_lock.release()
 
     def get_top_n_word_list_with_freq(self, n):
         '''
