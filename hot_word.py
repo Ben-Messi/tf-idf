@@ -465,7 +465,6 @@ class hot_event:
         self.cur_time = self.init_time
         self.min_interval = tf_idf_config.min_interval
         self.max_interval = tf_idf_config.max_interval
-        self.max_counter = 0
         #此处实例化hot_word类后类属性会初始化,loop_list创建对象则不会再费时间
         self.max_hd = hot_word()
         self.hd_list = loop_list(int(self.max_interval / self.min_interval), hot_word)
@@ -481,7 +480,6 @@ class hot_event:
         while 1:
             t = time.time()
             self.thread_lock.acquire()
-            self.max_counter += 1
             self.store_word_lists()
             if self.hd_list.is_full:
                 self.max_hd -= self.hd_list[0]
@@ -521,22 +519,21 @@ class hot_event:
         生成min,max word_list, 并存储
         '''
         word_lists = self.get_top_n_word_list(tf_idf_config.word_list_len)
-        min_key = "%s:%s" % (self.pre_fix, tf_idf_config.min_interval_key)
-
         dt = datetime.datetime.now()
+
+        min_key = "%s:%s" % (self.pre_fix, tf_idf_config.min_interval_key)
         min_json = {}
         min_json["words"] = word_lists[0]
         min_json['ctime'] = dt
         min_json_str = ujson.dumps(min_json)
         self.rhd.rpush(min_key, min_json_str)
-        if (self.max_interval / self.min_interval) <= self.max_counter:
-            self.max_counter = 0
-            max_key = "%s:%s" % (self.pre_fix, tf_idf_config.max_interval_key)
-            max_json = {}
-            max_json["words"] = word_lists[1]
-            max_json['ctime'] = dt
-            max_json_str = ujson.dumps(max_json)
-            self.rhd.rpush(max_key, max_json_str)
+
+        max_key = "%s:%s" % (self.pre_fix, tf_idf_config.max_interval_key)
+        max_json = {}
+        max_json["words"] = word_lists[1]
+        max_json['ctime'] = dt
+        max_json_str = ujson.dumps(max_json)
+        self.rhd.rpush(max_key, max_json_str)
 
     def __del__(self):
         pass
