@@ -459,6 +459,7 @@ class loop_list:
 #内部使用循环数组做hot_word对象管理
 #todo: 如果性能过低,尝试使用同时加到min,max里,如果min过期,则从max里减去min
 class hot_event:
+    rhd = None
     def __init__(self, pre_fix):
         self.pre_fix = pre_fix
         self.init_time = time.time()
@@ -468,7 +469,8 @@ class hot_event:
         #此处实例化hot_word类后类属性会初始化,loop_list创建对象则不会再费时间
         self.max_hd = hot_word()
         self.hd_list = loop_list(int(self.max_interval / self.min_interval), hot_word)
-        self.rhd = redis.Redis(host = tf_idf_config.redis_host, port = tf_idf_config.redis_port, db = tf_idf_config.redis_db)
+        if not hot_event.rhd:
+            hot_event.rhd = redis.Redis(host = tf_idf_config.redis_host, port = tf_idf_config.redis_port, db = tf_idf_config.redis_db)
 
 
         self.thread_lock = threading.Lock()
@@ -518,6 +520,7 @@ class hot_event:
         '''
         生成min,max word_list, 并存储
         '''
+        print id(hot_event.rhd)
         word_lists = self.get_top_n_word_list(tf_idf_config.word_list_len)
         dt = datetime.datetime.now()
 
@@ -526,14 +529,14 @@ class hot_event:
         min_json["words"] = word_lists[0]
         min_json['ctime'] = dt
         min_json_str = ujson.dumps(min_json)
-        self.rhd.rpush(min_key, min_json_str)
+        hot_event.rhd.rpush(min_key, min_json_str)
 
         max_key = "%s:%s" % (self.pre_fix, tf_idf_config.max_interval_key)
         max_json = {}
         max_json["words"] = word_lists[1]
         max_json['ctime'] = dt
         max_json_str = ujson.dumps(max_json)
-        self.rhd.rpush(max_key, max_json_str)
+        hot_event.rhd.rpush(max_key, max_json_str)
 
     def __del__(self):
         pass
